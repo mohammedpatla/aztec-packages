@@ -79,8 +79,7 @@ export class BlacklistTokenContractTest {
   }
 
   async crossTimestampOfChange() {
-    await this.cheatCodes.warpL2TimeAtLeastBy(this.wallets[2], BlacklistTokenContractTest.CHANGE_ROLES_DELAY / 2);
-    await this.cheatCodes.warpL2TimeAtLeastBy(this.wallets[2], BlacklistTokenContractTest.CHANGE_ROLES_DELAY / 2);
+    await this.cheatCodes.warpL2TimeAtLeastBy(this.admin, BlacklistTokenContractTest.CHANGE_ROLES_DELAY);
   }
 
   /**
