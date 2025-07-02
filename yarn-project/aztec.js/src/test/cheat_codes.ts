@@ -1,6 +1,7 @@
 import { EthCheatCodes } from '@aztec/ethereum/eth-cheatcodes';
 import type { L1ContractAddresses } from '@aztec/ethereum/l1-contract-addresses';
-import { getCanonicalInstanceDeployer } from '@aztec/protocol-contracts/instance-deployer';
+import { getCanonicalFeeJuice } from '@aztec/protocol-contracts/fee-juice';
+import { AztecAddress } from '@aztec/stdlib/aztec-address';
 import type { PXE } from '@aztec/stdlib/interfaces/client';
 
 import { Contract } from '../contract/contract.js';
@@ -48,13 +49,11 @@ export class CheatCodes {
     // We warp the L1 timestamp
     await this.eth.warp(targetTimestamp, { resetBlockInterval: true });
 
-    // Now we mine an L2 block for the L2 timestamp to advance
-    const instanceDeployer = await getCanonicalInstanceDeployer();
-    const artifact = instanceDeployer.artifact;
-    const address = instanceDeployer.address;
-
-    const contract = await Contract.at(address, artifact, wallet);
-    await contract.methods.get_update_delay().send().wait();
+    // Now we mine an L2 block for the L2 timestamp to advance. We achieve that by sending a tx interacting with
+    // an arbitrary contract (in our case the fee juice contract).
+    const feeJuice = await getCanonicalFeeJuice();
+    const contract = await Contract.at(feeJuice.address, feeJuice.artifact, wallet);
+    await contract.methods.balance_of_public(AztecAddress.ZERO).send().wait();
   }
 
   /**

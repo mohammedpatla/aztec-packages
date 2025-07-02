@@ -1,5 +1,5 @@
 import { getSchnorrAccountContractAddress } from '@aztec/accounts/schnorr';
-import { type AztecNode, Fr, type Wallet, getContractClassFromArtifact } from '@aztec/aztec.js';
+import { Fr, type Wallet, getContractClassFromArtifact } from '@aztec/aztec.js';
 import { registerContractClass } from '@aztec/aztec.js/deployment';
 import type { CheatCodes } from '@aztec/aztec.js/testing';
 import { MINIMUM_UPDATE_DELAY, UPDATED_CLASS_IDS_SLOT } from '@aztec/constants';
@@ -26,7 +26,6 @@ const UPDATED_CONTRACT_PUBLIC_VALUE = 27n;
 
 describe('e2e_contract_updates', () => {
   let wallet: Wallet;
-  let aztecNode: AztecNode;
   let teardown: () => Promise<void>;
   let contract: UpdatableContract;
   let updatedContractClassId: Fr;
@@ -77,7 +76,7 @@ describe('e2e_contract_updates', () => {
     const constructorArgs = [INITIAL_UPDATABLE_CONTRACT_VALUE];
     const genesisPublicData = await setupScheduledDelay(constructorArgs, salt, initialFundedAccounts[0].address);
 
-    ({ teardown, wallet, aztecNode, cheatCodes } = await setup(1, {
+    ({ teardown, wallet, cheatCodes } = await setup(1, {
       genesisPublicData,
       initialFundedAccounts,
     }));
@@ -98,7 +97,7 @@ describe('e2e_contract_updates', () => {
     expect(await contract.methods.get_private_value().simulate()).toEqual(INITIAL_UPDATABLE_CONTRACT_VALUE);
     expect(await contract.methods.get_public_value().simulate()).toEqual(INITIAL_UPDATABLE_CONTRACT_VALUE);
     await contract.methods.update_to(updatedContractClassId).send().wait();
-    // Mine some blocks
+    // Warp time to get past the timestamp of change where the update takes effect
     await cheatCodes.warpL2TimeAtLeastBy(wallet, DEFAULT_TEST_UPDATE_DELAY);
     // Should be updated now
     const updatedContract = await UpdatedContract.at(contract.address, wallet);

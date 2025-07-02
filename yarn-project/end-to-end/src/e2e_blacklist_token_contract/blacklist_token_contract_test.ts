@@ -57,7 +57,7 @@ export class Role {
 
 export class BlacklistTokenContractTest {
   // This value MUST match the same value that we have in the contract
-  static CHANGE_ROLES_DELAY = 86400;
+  static CHANGE_ROLES_DELAY = 43200;
 
   private snapshotManager: ISnapshotManager;
   logger: Logger;
@@ -79,7 +79,8 @@ export class BlacklistTokenContractTest {
   }
 
   async crossTimestampOfChange() {
-    await this.cheatCodes.warpL2TimeAtLeastBy(this.admin, BlacklistTokenContractTest.CHANGE_ROLES_DELAY);
+    await this.cheatCodes.warpL2TimeAtLeastBy(this.wallets[2], BlacklistTokenContractTest.CHANGE_ROLES_DELAY / 2);
+    await this.cheatCodes.warpL2TimeAtLeastBy(this.wallets[2], BlacklistTokenContractTest.CHANGE_ROLES_DELAY / 2);
   }
 
   /**
