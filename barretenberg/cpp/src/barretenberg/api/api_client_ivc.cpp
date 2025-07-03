@@ -49,25 +49,29 @@ acir_format::WitnessVector witness_map_to_witness_vector(std::map<std::string, s
  */
 void write_standalone_vk(const std::string& output_format,
                          const std::string& bytecode_path,
-                         const std::string& output_path)
+                         const std::filesystem::path& output_path)
 {
-    if (output_format != "bytes") {
-        throw_or_abort("Unsupported output format for standalone vk: " + output_format);
-    }
     auto bytecode = get_bytecode(bytecode_path);
 
     bbrpc::BBRpcRequest request;
     request.trace_settings = TraceSettings{ AZTEC_TRACE_STRUCTURE };
 
-    auto response = bbrpc::execute(
-        request,
-        bbrpc::ClientIvcComputeVk{ .circuit = { .name = "standalone_circuit", .bytecode = std::move(bytecode) },
-                                   .standalone = true });
+    auto response = bbrpc::execute(request,
+                                   bbrpc::ClientIvcComputeStandaloneVk{
+                                       .circuit = { .name = "standalone_circuit", .bytecode = std::move(bytecode) } });
 
     if (!response.error_message.empty()) {
         throw_or_abort("Failed to compute standalone VK: " + response.error_message);
     }
-    write_file(output_path, response.verification_key);
+
+    if (output_format == "bytes") {
+        write_file(output_path / "vk", response.vk_bytes);
+    } else if (output_format == "fields") {
+        write_file(output_path / "vk_fields.json",
+                   std::vector<uint8_t>(response.vk_fields.begin(), response.vk_fields.end()));
+    } else {
+        throw_or_abort("Unsupported output format for standalone vk: " + output_format);
+    }
 }
 
 size_t get_num_public_inputs_in_circuit(const std::filesystem::path& bytecode_path)
@@ -114,8 +118,7 @@ void write_vk_for_ivc(const std::string& output_data_type,
 
     auto response = bbrpc::execute(
         request,
-        bbrpc::ClientIvcComputeVk{ .circuit = { .name = "final_circuit", .bytecode = std::move(bytecode) },
-                                   .standalone = false });
+        bbrpc::ClientIvcComputeIvcVk{ .circuit = { .name = "final_circuit", .bytecode = std::move(bytecode) } });
 
     if (!response.error_message.empty()) {
         throw_or_abort("Failed to compute IVC VK: " + response.error_message);
@@ -123,9 +126,9 @@ void write_vk_for_ivc(const std::string& output_data_type,
 
     const bool output_to_stdout = output_dir == "-";
     if (output_to_stdout) {
-        write_bytes_to_stdout(response.verification_key);
+        write_bytes_to_stdout(response.vk_bytes);
     } else {
-        write_file(output_dir / "vk", response.verification_key);
+        write_file(output_dir / "vk", response.vk_bytes);
     }
 }
 

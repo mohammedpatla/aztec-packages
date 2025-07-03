@@ -6,7 +6,9 @@
 #include "barretenberg/client_ivc/client_ivc.hpp"
 #include "barretenberg/client_ivc/mock_circuit_producer.hpp"
 #include "barretenberg/common/compiler_hints.hpp"
+#include "barretenberg/common/container.hpp"
 #include "barretenberg/common/log.hpp"
+#include "barretenberg/common/map.hpp"
 #include "barretenberg/common/throw_or_abort.hpp"
 #include "barretenberg/dsl/acir_format/acir_format.hpp"
 #include "barretenberg/dsl/acir_format/acir_to_constraint_buf.hpp"
@@ -19,6 +21,17 @@
 #include <string>
 
 namespace bb::bbrpc {
+
+/**
+ * @brief Convert a vector of field elements to JSON array format
+ */
+inline std::string field_elements_to_json(const std::vector<bb::fr>& fields)
+{
+    if (fields.empty()) {
+        return "[]";
+    }
+    return format("[", join(transform::map(fields, [](auto fr) { return format("\"", fr, "\""); })), "]");
+}
 
 struct BBRpcRequest {
     TraceSettings trace_settings{ AZTEC_TRACE_STRUCTURE };
@@ -198,29 +211,42 @@ inline ClientIVC::VerificationKey compute_vk_for_ivc(const BBRpcRequest& request
     return ivc.get_vk();
 }
 
-inline ClientIvcComputeVk::Response execute(BBRpcRequest& request, ClientIvcComputeVk&& command)
+inline ClientIvcComputeStandaloneVk::Response execute(BBRpcRequest& request, ClientIvcComputeStandaloneVk&& command)
 {
-    info("ClientIvcComputeVk - deriving VK for circuit '", command.circuit.name, "', standalone: ", command.standalone);
+    info("ClientIvcComputeStandaloneVk - deriving VK for circuit '", command.circuit.name, "'");
 
-    // Parse the circuit
     auto constraint_system = acir_format::circuit_buf_to_acir_format(std::move(command.circuit.bytecode));
 
-    // Create verification key based on whether it's standalone or not
-    std::vector<uint8_t> vk_data;
-    if (command.standalone) {
-        // For standalone, we just need the circuit's verification key (not the full IVC VK)
-        acir_format::AcirProgram program{ constraint_system, /*witness=*/{} };
-        std::shared_ptr<ClientIVC::DeciderProvingKey> proving_key =
-            get_acir_program_decider_proving_key(request, program);
-        auto verification_key = std::make_shared<ClientIVC::MegaVerificationKey>(proving_key->proving_key);
-        vk_data = to_buffer(*verification_key);
-        info("ClientIvcComputeVk - standalone VK derived, size: ", vk_data.size(), " bytes");
-    } else {
-        vk_data = to_buffer(compute_vk_for_ivc(request, constraint_system.public_inputs.size()));
-        info("ClientIvcComputeVk - full IVC VK derived, size: ", vk_data.size(), " bytes");
-    }
+    ClientIvcComputeStandaloneVk::Response response;
 
-    return ClientIvcComputeVk::Response{ .verification_key = vk_data, .error_message = "" };
+    acir_format::AcirProgram program{ constraint_system, /*witness=*/{} };
+    std::shared_ptr<ClientIVC::DeciderProvingKey> proving_key = get_acir_program_decider_proving_key(request, program);
+    auto verification_key = std::make_shared<ClientIVC::MegaVerificationKey>(proving_key->proving_key);
+
+    response.vk_bytes = to_buffer(*verification_key);
+    response.vk_fields = field_elements_to_json(verification_key->to_field_elements());
+
+    info("ClientIvcComputeStandaloneVk - VK derived, size: ", response.vk_bytes.size(), " bytes");
+
+    response.error_message = "";
+    return response;
+}
+
+inline ClientIvcComputeIvcVk::Response execute(BBRpcRequest& request, ClientIvcComputeIvcVk&& command)
+{
+    info("ClientIvcComputeIvcVk - deriving IVC VK for circuit '", command.circuit.name, "'");
+
+    auto constraint_system = acir_format::circuit_buf_to_acir_format(std::move(command.circuit.bytecode));
+
+    ClientIvcComputeIvcVk::Response response;
+
+    auto vk = compute_vk_for_ivc(request, constraint_system.public_inputs.size());
+    response.vk_bytes = to_buffer(vk);
+
+    info("ClientIvcComputeIvcVk - IVC VK derived, size: ", response.vk_bytes.size(), " bytes");
+
+    response.error_message = "";
+    return response;
 }
 
 inline ClientIvcCheckPrecomputedVk::Response execute(BBRpcRequest& request, ClientIvcCheckPrecomputedVk&& command)
