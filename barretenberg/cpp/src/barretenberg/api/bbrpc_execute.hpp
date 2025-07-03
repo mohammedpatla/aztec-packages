@@ -89,30 +89,81 @@ inline VkAsFields::Response execute(BB_UNUSED BBRpcRequest& request, VkAsFields&
 
 inline ClientIvcStart::Response execute(BBRpcRequest& request, BB_UNUSED ClientIvcStart&& command)
 {
-    (void)request;
-    (void)command;
-    throw_or_abort("code in progress! should not be called");
+    request.ivc_in_progress = std::make_shared<ClientIVC>(request.trace_settings);
+    request.ivc_stack_depth = 0;
+    return ClientIvcStart::Response{ .error_message = "" };
 }
 
 inline ClientIvcLoad::Response execute(BBRpcRequest& request, ClientIvcLoad&& command)
 {
-    (void)request;
-    (void)command;
-    throw_or_abort("code in progress! should not be called");
+    if (!request.ivc_in_progress) {
+        return ClientIvcLoad::Response{ .error_message = "ClientIVC not started. Call ClientIvcStart first." };
+    }
+
+    request.last_circuit_name = command.circuit.name;
+    request.last_circuit_constraints = acir_format::circuit_buf_to_acir_format(std::move(command.circuit.bytecode));
+    request.last_circuit_vk = std::move(command.circuit.verification_key);
+
+    info("ClientIvcLoad - loaded circuit '", request.last_circuit_name, "'");
+
+    return ClientIvcLoad::Response{ .error_message = "" };
 }
 
 inline ClientIvcAccumulate::Response execute(BBRpcRequest& request, ClientIvcAccumulate&& command)
 {
-    (void)request;
-    (void)command;
-    throw_or_abort("code in progress! should not be called");
+    if (!request.ivc_in_progress) {
+        return ClientIvcAccumulate::Response{ .error_message = "ClientIVC not started. Call ClientIvcStart first." };
+    }
+
+    if (!request.last_circuit_constraints.has_value()) {
+        return ClientIvcAccumulate::Response{ .error_message = "No circuit loaded. Call ClientIvcLoad first." };
+    }
+
+    acir_format::WitnessVector witness = acir_format::witness_buf_to_witness_data(std::move(command.witness));
+    acir_format::AcirProgram program{ std::move(request.last_circuit_constraints.value()), std::move(witness) };
+
+    const acir_format::ProgramMetadata metadata{ request.ivc_in_progress };
+    auto circuit = acir_format::create_circuit<ClientIVC::ClientCircuit>(program, metadata);
+
+    std::shared_ptr<ClientIVC::MegaVerificationKey> precomputed_vk;
+    if (!request.last_circuit_vk.empty()) {
+        precomputed_vk = from_buffer<std::shared_ptr<ClientIVC::MegaVerificationKey>>(request.last_circuit_vk);
+    }
+
+    info("ClientIvcAccumulate - accumulating circuit '", request.last_circuit_name, "'");
+    request.ivc_in_progress->accumulate(circuit, precomputed_vk);
+    request.ivc_stack_depth++;
+
+    request.last_circuit_constraints.reset();
+    request.last_circuit_vk.clear();
+
+    return ClientIvcAccumulate::Response{ .error_message = "" };
 }
 
-inline ClientIvcProve::Response execute(BBRpcRequest& request, ClientIvcProve&& command)
+inline ClientIvcProve::Response execute(BBRpcRequest& request, BB_UNUSED ClientIvcProve&& command)
 {
-    (void)request;
-    (void)command;
-    throw_or_abort("code in progress! should not be called");
+    if (!request.ivc_in_progress) {
+        return ClientIvcProve::Response{ .proof = {},
+                                         .error_message = "ClientIVC not started. Call ClientIvcStart first." };
+    }
+
+    if (request.ivc_stack_depth == 0) {
+        return ClientIvcProve::Response{ .proof = {},
+                                         .error_message = "No circuits accumulated. Call ClientIvcAccumulate first." };
+    }
+
+    info("ClientIvcProve - generating proof for ", request.ivc_stack_depth, " accumulated circuits");
+
+    ClientIVC::Proof proof = request.ivc_in_progress->prove();
+
+    if (!request.ivc_in_progress->verify(proof)) {
+        return ClientIvcProve::Response{ .proof = {}, .error_message = "Failed to verify the generated proof!" };
+    }
+
+    request.ivc_in_progress.reset();
+    request.ivc_stack_depth = 0;
+
+    return ClientIvcProve::Response{ .proof = std::move(proof), .error_message = "" };
 }
 
 inline std::shared_ptr<ClientIVC::DeciderProvingKey> get_acir_program_decider_proving_key(
@@ -174,9 +225,26 @@ inline ClientIvcComputeVk::Response execute(BBRpcRequest& request, ClientIvcComp
 
 inline ClientIvcCheckPrecomputedVk::Response execute(BBRpcRequest& request, ClientIvcCheckPrecomputedVk&& command)
 {
-    (void)request;
-    (void)command;
-    throw_or_abort("code in progress! should not be called");
+    acir_format::AcirProgram program{ acir_format::circuit_buf_to_acir_format(std::move(command.circuit.bytecode)),
+                                      /*witness=*/{} };
+
+    std::shared_ptr<ClientIVC::DeciderProvingKey> proving_key = get_acir_program_decider_proving_key(request, program);
+    auto computed_vk = std::make_shared<ClientIVC::MegaVerificationKey>(proving_key->proving_key);
+
+    if (command.circuit.verification_key.empty()) {
+        info("FAIL: Expected precomputed vk for function ", command.function_name);
+        return ClientIvcCheckPrecomputedVk::Response{ .valid = false, .error_message = "Missing precomputed VK" };
+    }
+
+    auto precomputed_vk =
+        from_buffer<std::shared_ptr<ClientIVC::MegaVerificationKey>>(command.circuit.verification_key);
+
+    std::string error_message = "Precomputed vk does not match computed vk for function " + command.function_name;
+    if (!msgpack::msgpack_check_eq(*computed_vk, *precomputed_vk, error_message)) {
+        return ClientIvcCheckPrecomputedVk::Response{ .valid = false, .error_message = error_message };
+    }
+
+    return ClientIvcCheckPrecomputedVk::Response{ .valid = true, .error_message = "" };
 }
 
 /**
