@@ -54,7 +54,6 @@ void write_standalone_vk(const std::string& output_format,
     auto bytecode = get_bytecode(bytecode_path);
 
     bbrpc::BBRpcRequest request;
-    request.trace_settings = TraceSettings{ AZTEC_TRACE_STRUCTURE };
 
     auto response = bbrpc::execute(request,
                                    bbrpc::ClientIvcComputeStandaloneVk{
@@ -90,7 +89,6 @@ void write_vk_for_ivc(const std::string& output_format,
     }
 
     bbrpc::BBRpcRequest request;
-    request.trace_settings = TraceSettings{ AZTEC_TRACE_STRUCTURE };
 
     auto vk = bbrpc::compute_vk_for_ivc(request, num_public_inputs_in_final_circuit);
     const auto buf = to_buffer(vk);
@@ -114,7 +112,6 @@ void write_vk_for_ivc(const std::string& output_data_type,
     auto bytecode = get_bytecode(bytecode_path);
 
     bbrpc::BBRpcRequest request;
-    request.trace_settings = TraceSettings{ AZTEC_TRACE_STRUCTURE };
 
     auto response = bbrpc::execute(
         request,
@@ -139,7 +136,6 @@ void ClientIVCAPI::prove(const Flags& flags,
     auto raw_steps = PrivateExecutionStepRaw::load_and_decompress(input_path);
 
     bbrpc::BBRpcRequest request;
-    request.trace_settings = TraceSettings{ AZTEC_TRACE_STRUCTURE };
 
     auto start_response = bbrpc::execute(request, bbrpc::ClientIvcStart{});
     if (!start_response.error_message.empty()) {
@@ -229,7 +225,6 @@ bool ClientIVCAPI::check_precomputed_vks(const std::filesystem::path& input_path
     auto raw_steps = PrivateExecutionStepRaw::load_and_decompress(input_path);
 
     bbrpc::BBRpcRequest request;
-    request.trace_settings = TraceSettings{ AZTEC_TRACE_STRUCTURE };
 
     for (const auto& step : raw_steps) {
         if (step.vk.empty()) {

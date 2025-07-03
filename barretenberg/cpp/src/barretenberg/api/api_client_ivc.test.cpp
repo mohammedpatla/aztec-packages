@@ -46,7 +46,6 @@ void create_test_private_execution_steps(const std::filesystem::path& output_pat
 
     // Get the VK for the app circuit
     bbrpc::BBRpcRequest request;
-    request.trace_settings = TraceSettings{ AZTEC_TRACE_STRUCTURE };
 
     auto app_vk = bbrpc::execute(request,
                                  bbrpc::ClientIvcComputeStandaloneVk{
